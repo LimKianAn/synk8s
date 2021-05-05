@@ -1,0 +1,5 @@
+namespace: sync-crd-system
+namePrefix: sync-crd-
+bases:
+- ../rbac
+- ../manager

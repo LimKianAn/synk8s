@@ -17,74 +17,140 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 
-	"github.com/LimKianAn/sync-crd/controllers"
+	api "github.com/LimKianAn/sync-crd/api/v1"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
 	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+// Change Instance to your CRD struct name
+type CRD = api.Instance
 
 var (
-	schm     = runtime.NewScheme()
-	setupLog = cr.Log.WithName("setup")
+	flags = struct {
+		metricsAddr, source, destination string
+		enableLeaderElection             bool
+	}{}
+	log    = cr.Log.WithName("setup")
+	scheme = runtime.NewScheme()
 )
 
+func init() {
+	_ = api.AddToScheme(scheme)
+}
+
 func main() {
-	var metricsAddr, source, destination, group, version string
-	var enableLeaderElection bool
-	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
-	flag.StringVar(&source, "source-cluster-kubeconfig", "", "The path to the kubeconfig of the source cluster")
-	flag.StringVar(&destination, "destination-cluster-kubeconfig", "", "The path to the kubeconfig of the destination cluster")
-	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&group, "api-group", "", "")
-	flag.StringVar(&version, "api-version", "", "")
-
-	flag.Parse()
-
+	parseflags()
 	cr.SetLogger(zap.New(zap.UseDevMode(true)))
 
-	_ = (&scheme.Builder{GroupVersion: schema.GroupVersion{Group: group, Version: version}}).AddToScheme(schm)
-
-	SourceConfig, err := clientcmd.BuildConfigFromFlags("", source)
+	mgr, err := NewMgr()
 	if err != nil {
-		setupLog.Error(err, "unable to build config from flags")
+		log.Error(err, "unable to start manager")
 		os.Exit(1)
+	}
+
+	if err := mgr.RegisterCRDController(); err != nil {
+		log.Error(err, "unable to create a new controller")
+		os.Exit(1)
+	}
+
+	if err := mgr.Start(context.Background()); err != nil {
+		log.Error(err, "unable to start a manager")
+		os.Exit(1)
+	}
+}
+
+func NewMgr() (*Mgr, error) {
+	SourceConfig, err := clientcmd.BuildConfigFromFlags("", flags.source)
+	if err != nil {
+		log.Error(err, "unable to build config from flags")
+		return nil, err
 	}
 
 	mgr, err := cr.NewManager(SourceConfig, cr.Options{
-		Scheme:             schm,
-		MetricsBindAddress: metricsAddr,
+		Scheme:             scheme,
+		MetricsBindAddress: flags.metricsAddr,
 		Port:               9443,
-		LeaderElection:     enableLeaderElection,
+		LeaderElection:     flags.enableLeaderElection,
 		LeaderElectionID:   "sync-crd",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		log.Error(err, "unable to create a new manager")
+		return nil, err
 	}
 
-	destinationConfig, err := clientcmd.BuildConfigFromFlags("", destination)
+	return &Mgr{Manager: mgr}, nil
+}
+
+type Mgr struct {
+	manager.Manager
+}
+
+func (m *Mgr) RegisterCRDController() error {
+	destinationConfig, err := clientcmd.BuildConfigFromFlags("", flags.destination)
 	if err != nil {
-		setupLog.Error(err, "unable to build config from flags")
-		os.Exit(1)
+		return fmt.Errorf("unable to build config from flags: %w", err)
 	}
-	destK8sClient, err := client.New(destinationConfig, client.Options{Scheme: schm})
 
-	if err = (&controllers.InstanceReconciler{
-		Source: mgr.GetClient(),
-		Log:    cr.Log.WithName("controllers").WithName("Instance"),
-		Scheme: mgr.GetScheme(),
-		Dest:   destK8sClient,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Instance")
-		os.Exit(1)
+	destK8sClient, err := client.New(destinationConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("unable to create a new k8s client: %w", err)
 	}
+
+	return cr.NewControllerManagedBy(m).
+		For(&CRD{}).
+		Complete(&InstanceReconciler{
+			Source: m.GetClient(),
+			Log:    cr.Log.WithName("controllers").WithName("CRD"),
+			Scheme: m.GetScheme(),
+			Dest:   destK8sClient,
+		})
+}
+
+func parseflags() {
+	flag.StringVar(&flags.metricsAddr, "metrics-addr", ":9999", "The address the metric endpoint binds to")
+	flag.StringVar(&flags.source, "source-cluster-kubeconfig", "", "The path to the kubeconfig of the source cluster")
+	flag.StringVar(&flags.destination, "destination-cluster-kubeconfig", "", "The path to the kubeconfig of the destination cluster")
+	flag.BoolVar(&flags.enableLeaderElection, "enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.Parse()
+}
+
+type InstanceReconciler struct {
+	Source client.Client
+	Log    logr.Logger
+	Scheme *runtime.Scheme
+	Dest   client.Client
+}
+
+func (r *InstanceReconciler) Reconcile(ctx context.Context, req cr.Request) (cr.Result, error) {
+	log := r.Log.WithValues("instance", req.NamespacedName)
+
+	source := &CRD{}
+	if err := r.Source.Get(ctx, req.NamespacedName, source); err != nil {
+		return cr.Result{}, client.IgnoreNotFound(err)
+	}
+	log.Info("source instance fetched")
+
+	dest := &CRD{}
+	if err := r.Dest.Get(ctx, req.NamespacedName, dest); err != nil {
+		return cr.Result{}, client.IgnoreNotFound(err)
+	}
+	log.Info("destination instance fetched")
+
+	dest.Spec = source.Spec
+	if err := r.Dest.Update(ctx, dest); err != nil {
+		return cr.Result{}, fmt.Errorf("failed to update destination instance: %w", err)
+	}
+	log.Info("destination instance updated")
+
+	return cr.Result{}, nil
 }
