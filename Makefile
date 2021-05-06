@@ -20,12 +20,9 @@ manager: fmt vet
 
 # Run against the configured k8s clusters
 run: fmt vet
-	GATEWAY_DEMO_ROOT=$$(echo ${PWD} | sed 's#/github.com/LimKianAn/sync-crd##') && \
-	kut -c kind-metal-control-plane -k $${GATEWAY_DEMO_ROOT}/git.f-i-ts.de/cloud-native/accounting/accounting-lab/mini-lab/.kubeconfig > /tmp/cloudapi && \
-	kut -c kind-kind > /tmp/kind && \
 	go run ./main.go \
-	-source-cluster-kubeconfig /tmp/cloudapi \
-	-destination-cluster-kubeconfig /tmp/kind
+	-source-cluster-kubeconfig /tmp/source \
+	-destination-cluster-kubeconfig /tmp/dest
 
 # Install CRDs into a cluster
 install:
