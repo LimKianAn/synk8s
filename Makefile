@@ -18,9 +18,10 @@ test: fmt vet
 manager: fmt vet
 	go build -o bin/manager main.go
 
-# Run against the configured Kubernetes cluster in ~/.kube/config
+# Run against the configured k8s clusters
 run: fmt vet
-	kut -c kind-metal-control-plane -k /home/limkianan/Documents/git.f-i-ts.de/cloud-native/accounting/accounting-lab/mini-lab/.kubeconfig > /tmp/cloudapi && \
+	GATEWAY_DEMO_ROOT=$$(echo ${PWD} | sed 's#/github.com/LimKianAn/sync-crd##') && \
+	kut -c kind-metal-control-plane -k $${GATEWAY_DEMO_ROOT}/git.f-i-ts.de/cloud-native/accounting/accounting-lab/mini-lab/.kubeconfig > /tmp/cloudapi && \
 	kut -c kind-kind > /tmp/kind && \
 	go run ./main.go \
 	-source-cluster-kubeconfig /tmp/cloudapi \

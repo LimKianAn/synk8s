@@ -22,43 +22,67 @@ import (
 	"fmt"
 	"os"
 
-	api "github.com/LimKianAn/sync-crd/api/v1"
 	"github.com/go-logr/logr"
+	core "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	// Change `github.com/LimKianAn/sync-crd/api/v1` to the path to your crd
+	api "github.com/LimKianAn/sync-crd/api/v1"
 )
 
-// Change Instance to your CRD struct name
-type CRD = api.Instance
+// Change `Instance` to your crd
+type crd = api.Instance
 
 var (
 	flags = struct {
 		metricsAddr, source, destination string
 		enableLeaderElection             bool
 	}{}
-	log    = cr.Log.WithName("setup")
-	scheme = runtime.NewScheme()
+	log           = cr.Log.WithName("setup")
+	scheme        = runtime.NewScheme()
+	schemeBuilder = runtime.SchemeBuilder{
+		core.AddToScheme,
+		api.AddToScheme,
+	}
+)
+
+type (
+	extendedMgr struct {
+		manager.Manager
+	}
+
+	instanceReconciler struct {
+		Source client.Client
+		Log    logr.Logger
+		Scheme *runtime.Scheme
+		Dest   client.Client
+	}
 )
 
 func init() {
-	_ = api.AddToScheme(scheme)
+	utilruntime.Must(schemeBuilder.AddToScheme(scheme))
 }
 
 func main() {
 	parseflags()
 	cr.SetLogger(zap.New(zap.UseDevMode(true)))
 
-	mgr, err := NewMgr()
+	mgr, err := newMgr()
 	if err != nil {
 		log.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	if err := mgr.RegisterCRDController(); err != nil {
+	if err := mgr.registerCRDController(); err != nil {
 		log.Error(err, "unable to create a new controller")
 		os.Exit(1)
 	}
@@ -69,7 +93,7 @@ func main() {
 	}
 }
 
-func NewMgr() (*Mgr, error) {
+func newMgr() (*extendedMgr, error) {
 	SourceConfig, err := clientcmd.BuildConfigFromFlags("", flags.source)
 	if err != nil {
 		log.Error(err, "unable to build config from flags")
@@ -88,14 +112,10 @@ func NewMgr() (*Mgr, error) {
 		return nil, err
 	}
 
-	return &Mgr{Manager: mgr}, nil
+	return &extendedMgr{Manager: mgr}, nil
 }
 
-type Mgr struct {
-	manager.Manager
-}
-
-func (m *Mgr) RegisterCRDController() error {
+func (m *extendedMgr) registerCRDController() error {
 	destinationConfig, err := clientcmd.BuildConfigFromFlags("", flags.destination)
 	if err != nil {
 		return fmt.Errorf("unable to build config from flags: %w", err)
@@ -107,13 +127,57 @@ func (m *Mgr) RegisterCRDController() error {
 	}
 
 	return cr.NewControllerManagedBy(m).
-		For(&CRD{}).
-		Complete(&InstanceReconciler{
+		For(&crd{}).
+		Complete(&instanceReconciler{
 			Source: m.GetClient(),
 			Log:    cr.Log.WithName("controllers").WithName("CRD"),
 			Scheme: m.GetScheme(),
 			Dest:   destK8sClient,
 		})
+}
+
+func (r *instanceReconciler) Reconcile(ctx context.Context, req cr.Request) (cr.Result, error) {
+	log := r.Log.WithValues("instance", req.NamespacedName)
+
+	source := &crd{}
+	if err := r.Source.Get(ctx, req.NamespacedName, source); err != nil {
+		return cr.Result{}, client.IgnoreNotFound(err)
+	}
+	log.Info("source instance fetched")
+
+	if err := ensureNamespace(ctx, r.Dest, req.NamespacedName.Namespace); err != nil {
+		return cr.Result{}, fmt.Errorf("failed to ensure namespace %s: %w", source.Namespace, err)
+	}
+	log.Info("namespace in destination cluster ensured")
+
+	dest := &crd{}
+	dest.Namespace = source.Namespace
+	dest.Name = source.Name
+	_, err := controllerutil.CreateOrPatch(ctx, r.Dest, dest, func() error {
+		dest.Spec = source.Spec
+		return nil
+	})
+	if err != nil {
+		return cr.Result{}, fmt.Errorf("failed to reconcile the destination instance: %w", err)
+	}
+	log.Info("destination instance reconciled")
+
+	return cr.Result{}, nil
+}
+
+func ensureNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
+	nsObj := &core.Namespace{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, nsObj); err != nil {
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch namespace %s: %w", namespace, err)
+		}
+
+		nsObj.Name = namespace
+		if err := k8sClient.Create(ctx, nsObj); err != nil {
+			return fmt.Errorf("failed to create namespace %s: %w", namespace, err)
+		}
+	}
+	return nil
 }
 
 func parseflags() {
@@ -122,35 +186,4 @@ func parseflags() {
 	flag.StringVar(&flags.destination, "destination-cluster-kubeconfig", "", "The path to the kubeconfig of the destination cluster")
 	flag.BoolVar(&flags.enableLeaderElection, "enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
-}
-
-type InstanceReconciler struct {
-	Source client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
-	Dest   client.Client
-}
-
-func (r *InstanceReconciler) Reconcile(ctx context.Context, req cr.Request) (cr.Result, error) {
-	log := r.Log.WithValues("instance", req.NamespacedName)
-
-	source := &CRD{}
-	if err := r.Source.Get(ctx, req.NamespacedName, source); err != nil {
-		return cr.Result{}, client.IgnoreNotFound(err)
-	}
-	log.Info("source instance fetched")
-
-	dest := &CRD{}
-	if err := r.Dest.Get(ctx, req.NamespacedName, dest); err != nil {
-		return cr.Result{}, client.IgnoreNotFound(err)
-	}
-	log.Info("destination instance fetched")
-
-	dest.Spec = source.Spec
-	if err := r.Dest.Update(ctx, dest); err != nil {
-		return cr.Result{}, fmt.Errorf("failed to update destination instance: %w", err)
-	}
-	log.Info("destination instance updated")
-
-	return cr.Result{}, nil
 }
