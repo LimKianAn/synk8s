@@ -1,5 +1,6 @@
+
 # Image URL to use all building/pushing image targets
-IMG ?= sync-crd:latest
+IMG ?= ghcr.io/metal-stack/sync-crd:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -8,23 +9,39 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: manager
+all: sync-crd
 
 # Run tests
 test: fmt vet
 	go test ./... -coverprofile cover.out
 
+REPO_URL ?= github.com/metal-stack/firewall-controller
+REPO_VERSION ?= latest
+SUB_PATH ?= api/v1
+CRD_KIND ?= ClusterwideNetworkPolicy
+
+sync-crd: manager back
+	mv bin/manager bin/sync-crd
+
 # Build manager binary
-manager: fmt vet
+manager: edit download fmt vet
 	go build -o bin/manager main.go
 
-# Run against the configured k8s clusters
-run: fmt vet
-	go run ./main.go \
-	-source-cluster-kubeconfig /tmp/source \
-	-destination-cluster-kubeconfig /tmp/dest
+edit:
+	sed 's#=> .*#=> ${REPO_URL} ${REPO_VERSION}#' -i go.mod && \
+	sed 's#repo-url/.*#repo-url/${SUB_PATH}"#' -i main.go && \
+	sed 's#crd = api..*#crd = api.${CRD_KIND}#' -i main.go && \
+	go mod tidy
 
-# Install CRDs into a cluster
+download:
+	go mod download
+
+back:
+	sed 's#=> .*#=> REPO_URL REPO_VERSION#' -i go.mod && \
+	sed 's#repo-url/.*#repo-url/SUB_PATH"#' -i main.go && \
+	sed 's#crd = api..*#crd = api.CRD_KIND#' -i main.go
+
+# stall CRDs into a cluster
 install:
 	kustomize build config/crd | kubectl apply -f -
 
@@ -46,7 +63,7 @@ vet:
 	go vet ./...
 
 # Build the docker image
-docker-build: test
+docker-build: edit test
 	docker build . -t ${IMG}
 
 # Push the docker image

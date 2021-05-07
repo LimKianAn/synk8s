@@ -5,13 +5,17 @@ WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
+
+# cloud-gateway-controller is not open-sourced yet
+# COPY cloud-gateway-controller cloud-gateway-controller
+# RUN cd cloud-gateway-controller; go mod download
+
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
 # Copy the go source
 COPY main.go main.go
-COPY api/ api/
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
@@ -20,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager 
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/manager sync-crd
 USER nonroot:nonroot
 
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/sync-crd", "--source=source", "--dest=dest"]

@@ -35,12 +35,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	// Change `github.com/LimKianAn/sync-crd/api/v1` to the path to your crd
-	api "github.com/LimKianAn/sync-crd/api/v1"
+	api "repo-url/SUB_PATH"
 )
 
-// Change `Instance` to your crd
-type crd = api.Instance
+type crd = api.CRD_KIND
 
 var (
 	flags = struct {
@@ -182,8 +180,8 @@ func ensureNamespace(ctx context.Context, k8sClient client.Client, namespace str
 
 func parseflags() {
 	flag.StringVar(&flags.metricsAddr, "metrics-addr", ":9999", "The address the metric endpoint binds to")
-	flag.StringVar(&flags.source, "source-cluster-kubeconfig", "", "The path to the kubeconfig of the source cluster")
-	flag.StringVar(&flags.destination, "destination-cluster-kubeconfig", "", "The path to the kubeconfig of the destination cluster")
+	flag.StringVar(&flags.source, "source", "/tmp/source", "The path to the kubeconfig of the source cluster")
+	flag.StringVar(&flags.destination, "dest", "/tmp/dest", "The path to the kubeconfig of the destination cluster")
 	flag.BoolVar(&flags.enableLeaderElection, "enable-leader-election", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.Parse()
 }
