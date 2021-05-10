@@ -182,8 +182,8 @@ github.com/evanphx/json-patch v4.9.0+incompatible h1:kLcOMZeuLAJvL2BPWLMIj5oaZQo
 github.com/evanphx/json-patch v4.9.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLiYLvXMP4fmwYFNcr97nuDLSk=
 github.com/fatih/color v1.7.0 h1:DkWD4oS2D8LGGgTQ6IvwJJXSL5Vp2ffcQg58nFV38Ys=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
-github.com/fi-ts/cloud-gateway-controller v0.0.0-20210409071510-f92a7c207da8 h1:/qgmSSO4nIMocT8HaOvgIgenvFQ7jTkRod4rwKjgZdg=
-github.com/fi-ts/cloud-gateway-controller v0.0.0-20210409071510-f92a7c207da8/go.mod h1:bEwQzjeTm083w9S1GYdV4dFO2JLyIu+ZSgX6+35h+5Y=
+github.com/fi-ts/cloud-gateway-controller v0.0.0-20210510085353-3ef1d442031d h1:5Z6VcFCC9W8jLmGWvm5+J0Qz/2rBvSaRgRNE26aApBo=
+github.com/fi-ts/cloud-gateway-controller v0.0.0-20210510085353-3ef1d442031d/go.mod h1:bEwQzjeTm083w9S1GYdV4dFO2JLyIu+ZSgX6+35h+5Y=
 github.com/form3tech-oss/jwt-go v3.2.2+incompatible h1:TcekIExNqud5crz4xD2pavyTgWiPvpYe4Xau31I0PRk=
 github.com/form3tech-oss/jwt-go v3.2.2+incompatible/go.mod h1:pbq4aXjuKjdthFRnoDwaVPLA+WlJuPGy+QneDUgJi2k=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=

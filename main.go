@@ -35,10 +35,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	api "repo-url/SUB_PATH"
+	api "repo-url/api/v1"
 )
 
-type crd = api.CRD_KIND
+type crd = api.Instance
 
 var (
 	flags = struct {
@@ -103,7 +103,7 @@ func newMgr() (*extendedMgr, error) {
 		MetricsBindAddress: flags.metricsAddr,
 		Port:               9443,
 		LeaderElection:     flags.enableLeaderElection,
-		LeaderElectionID:   "sync-crd",
+		LeaderElectionID:   "syncrd",
 	})
 	if err != nil {
 		log.Error(err, "unable to create a new manager")

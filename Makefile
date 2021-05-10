@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/metal-stack/sync-crd:latest
+IMG ?= ghcr.io/metal-stack/syncrd:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -9,7 +9,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: sync-crd
+all: syncrd
 
 # Run tests
 test: fmt vet
@@ -20,26 +20,18 @@ REPO_VERSION ?= latest
 SUB_PATH ?= api/v1
 CRD_KIND ?= ClusterwideNetworkPolicy
 
-sync-crd: manager back
-	mv bin/manager bin/sync-crd
-
 # Build manager binary
-manager: edit download fmt vet
-	go build -o bin/manager main.go
+syncrd: edit download fmt vet
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -o bin/syncrd main.go
 
 edit:
-	sed 's#=> .*#=> ${REPO_URL} ${REPO_VERSION}#' -i go.mod && \
+	sed 's#repo-url => .*#repo-url => ${REPO_URL} ${REPO_VERSION}#' -i go.mod && \
 	sed 's#repo-url/.*#repo-url/${SUB_PATH}"#' -i main.go && \
-	sed 's#crd = api..*#crd = api.${CRD_KIND}#' -i main.go && \
+	sed 's#type crd = api.*#type crd = api.${CRD_KIND}#' -i main.go && \
 	go mod tidy
 
 download:
 	go mod download
-
-back:
-	sed 's#=> .*#=> REPO_URL REPO_VERSION#' -i go.mod && \
-	sed 's#repo-url/.*#repo-url/SUB_PATH"#' -i main.go && \
-	sed 's#crd = api..*#crd = api.CRD_KIND#' -i main.go
 
 # stall CRDs into a cluster
 install:
@@ -63,7 +55,7 @@ vet:
 	go vet ./...
 
 # Build the docker image
-docker-build: edit test
+docker-build: edit test syncrd
 	docker build . -t ${IMG}
 
 # Push the docker image
