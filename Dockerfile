@@ -2,7 +2,7 @@
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY bin/syncrd syncrd
+COPY bin/synk8s synk8s
 USER nonroot:nonroot
 
-ENTRYPOINT ["/syncrd", "--source=/source", "--dest=/dest"]
+ENTRYPOINT ["/synk8s", "--source=/source", "--dest=/dest"]

@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/metal-stack/syncrd:latest
+IMG ?= ghcr.io/metal-stack/synk8s:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -9,37 +9,26 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: syncrd
+all: synk8s
 
 # Run tests
 test: fmt vet
 	go test ./... -coverprofile cover.out
 
-REPO_URL ?= github.com/metal-stack/firewall-controller
-REPO_VERSION ?= latest
-SUB_PATH ?= api/v1
-CRD_KIND ?= ClusterwideNetworkPolicy
-
 # Build manager binary
-syncrd: edit download fmt vet
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -o bin/syncrd main.go
+synk8s: edit download fmt vet
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -o bin/synk8s main.go
 
+GROUPVERSION ?= corev1
+KIND ?= Secret
+FIELD ?= Data
 edit:
-	sed 's#repo-url => .*#repo-url => ${REPO_URL} ${REPO_VERSION}#' -i go.mod && \
-	sed 's#repo-url/.*#repo-url/${SUB_PATH}"#' -i main.go && \
-	sed 's#type crd = api.*#type crd = api.${CRD_KIND}#' -i main.go && \
+	sed 's#type Resource = .*#type Resource = ${GROUPVERSION}.${KIND}#' -i controllers/resource_controller.go && \
+	sed 's#func set(source.*#func set(source, dest \*Resource) { source.${FIELD} = dest.${FIELD} }#' -i controllers/resource_controller.go && \
 	go mod tidy
 
 download:
 	go mod download
-
-# stall CRDs into a cluster
-install:
-	kustomize build config/crd | kubectl apply -f -
-
-# Uninstall CRDs from a cluster
-uninstall:
-	kustomize build config/crd | kubectl delete -f -
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy:
@@ -55,7 +44,7 @@ vet:
 	go vet ./...
 
 # Build the docker image
-docker-build: edit test syncrd
+docker-build: edit synk8s
 	docker build . -t ${IMG}
 
 # Push the docker image
