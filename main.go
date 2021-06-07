@@ -54,7 +54,7 @@ func init() {
 func main() {
 	parseflags()
 	cr.SetLogger(zap.New(zap.UseDevMode(true)))
-	log.Info("check!", "ns", flags.namespace)
+	log.Info("flags parsed", "namespace", flags.namespace)
 
 	mgr, err := newMgr()
 	if err != nil {
